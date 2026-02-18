@@ -52,7 +52,14 @@ jobs:
           OUR_TAGS=$(gh release list --json tagName -q '.[].tagName' \
             | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
 
-          ALL_NEW=$(comm -23 <(echo "$GHOSTTY_TAGS") <(echo "$OUR_TAGS"))
+          # Filter to only tags >= 1.2.3 (older versions use incompatible build systems)
+          BUILDABLE_TAGS=$(echo "$GHOSTTY_TAGS" | while read -r tag; do
+            if [ "$(printf '%s\n%s' "1.2.3" "$tag" | sort -V | head -1)" = "1.2.3" ]; then
+              echo "$tag"
+            fi
+          done)
+
+          ALL_NEW=$(comm -23 <(echo "$BUILDABLE_TAGS") <(echo "$OUR_TAGS"))
 
           if [ -z "$OUR_TAGS" ]; then
             # No existing versioned releases — only build the latest tag
@@ -118,12 +125,13 @@ jobs:
           REPO_URL=$(gh repo view --json url -q .url)
           DOWNLOAD_URL="${REPO_URL}/releases/download/nightly/GhosttyKit.xcframework.zip"
 
-          sed -i '' "s|url: \".*\"|url: \"${DOWNLOAD_URL}\"|" Package.swift
-          sed -i '' "s|checksum: \".*\"|checksum: \"${CHECKSUM}\"|" Package.swift
-
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git pull --rebase origin main
+
+          sed -i '' "s|url: \".*\"|url: \"${DOWNLOAD_URL}\"|" Package.swift
+          sed -i '' "s|checksum: \".*\"|checksum: \"${CHECKSUM}\"|" Package.swift
+
           git add Package.swift
           git diff --cached --quiet || (git commit -m "Update nightly to ghostty-org/ghostty@${{ needs.check.outputs.nightly_short_sha }}" && git push)
         env:
