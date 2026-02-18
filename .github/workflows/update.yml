@@ -20,10 +20,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Get latest Ghostty commit
+      - name: Get Ghostty tip release commit
         id: ghostty
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          SHA=$(git ls-remote https://github.com/ghostty-org/ghostty.git HEAD | cut -f1)
+          SHA=$(gh release view tip -R ghostty-org/ghostty --json targetCommitish -q .targetCommitish)
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "short_sha=${SHA:0:7}" >> "$GITHUB_OUTPUT"
 
@@ -71,8 +73,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Clone Ghostty
-        run: git clone https://github.com/ghostty-org/ghostty.git --depth 1
+      - name: Clone Ghostty at tip
+        run: git clone https://github.com/ghostty-org/ghostty.git --depth 1 --branch tip
 
       - name: Detect Zig version
         id: zig
