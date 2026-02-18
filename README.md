@@ -50,7 +50,19 @@ See [Ghostty's source](https://github.com/ghostty-org/ghostty/tree/main/macos/So
 
 ## Linker flags
 
-Consumers need to add `-lc++` to their target's `OTHER_LDFLAGS` build setting.
+libghostty requires linking against C++. In an Xcode project, add `-lc++` to your target's **Other Linker Flags** build setting. In a Swift package:
+
+```swift
+.target(
+    name: "MyTarget",
+    dependencies: [
+        .product(name: "GhosttyKit", package: "GhosttyKit"),
+    ],
+    linkerSettings: [
+        .linkedLibrary("c++"),
+    ]
+)
+```
 
 ## Platforms
 
