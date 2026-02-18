@@ -1,0 +1,183 @@
+name: Update GhosttyKit
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      nightly_sha: ${{ steps.ghostty.outputs.sha }}
+      nightly_short_sha: ${{ steps.ghostty.outputs.short_sha }}
+      nightly_needed: ${{ steps.check_nightly.outputs.needed }}
+      new_tags: ${{ steps.check_tags.outputs.tags }}
+      tags_needed: ${{ steps.check_tags.outputs.needed }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get latest Ghostty commit
+        id: ghostty
+        run: |
+          SHA=$(git ls-remote https://github.com/ghostty-org/ghostty.git HEAD | cut -f1)
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+      - name: Check if nightly needs update
+        id: check_nightly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CURRENT_NOTES=$(gh release view nightly --json body -q .body 2>/dev/null || echo "")
+          if [[ "$CURRENT_NOTES" == *"${{ steps.ghostty.outputs.sha }}"* ]]; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check for new Ghostty version tags
+        id: check_tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # All Ghostty version tags (strip v prefix), only >= 1.3.0
+          # (older tags have broken build deps and can't be compiled)
+          GHOSTTY_TAGS=$(git ls-remote --tags https://github.com/ghostty-org/ghostty.git \
+            | grep -oP 'refs/tags/v\K[0-9]+\.[0-9]+\.[0-9]+$' | sort -V \
+            | awk -F. '$1 > 1 || ($1 == 1 && $2 >= 3)')
+
+          OUR_TAGS=$(gh release list --json tagName -q '.[].tagName' \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
+
+          NEW_TAGS=$(comm -23 <(echo "$GHOSTTY_TAGS") <(echo "$OUR_TAGS"))
+
+          if [ -z "$NEW_TAGS" ]; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "tags=[]" >> "$GITHUB_OUTPUT"
+          else
+            JSON=$(echo "$NEW_TAGS" | jq -R -c -s 'split("\n") | map(select(. != ""))')
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            echo "tags=$JSON" >> "$GITHUB_OUTPUT"
+          fi
+
+  nightly:
+    needs: check
+    if: needs.check.outputs.nightly_needed == 'true'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone Ghostty
+        run: git clone https://github.com/ghostty-org/ghostty.git --depth 1
+
+      - name: Detect Zig version
+        id: zig
+        run: |
+          ZIG_VERSION=$(sed -n 's/.*minimum_zig_version = "\([^"]*\)".*/\1/p' ghostty/build.zig.zon)
+          echo "version=$ZIG_VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ steps.zig.outputs.version }}
+
+      - name: Build XCFramework
+        run: |
+          cd ghostty
+          zig build -Dapp-runtime=none -Demit-xcframework -Demit-macos-app=false
+
+      - name: Package
+        run: |
+          cp -R ghostty/macos/GhosttyKit.xcframework .
+          zip -r -y GhosttyKit.xcframework.zip GhosttyKit.xcframework
+          echo "CHECKSUM=$(swift package compute-checksum GhosttyKit.xcframework.zip)" >> "$GITHUB_ENV"
+
+      - name: Update nightly release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete nightly --yes 2>/dev/null || true
+          git push origin :refs/tags/nightly 2>/dev/null || true
+          gh release create nightly \
+            GhosttyKit.xcframework.zip \
+            --title "Nightly" \
+            --notes "Built from ghostty-org/ghostty@${{ needs.check.outputs.nightly_sha }}" \
+            --prerelease
+
+      - name: Update Package.swift on main
+        run: |
+          REPO_URL=$(gh repo view --json url -q .url)
+          DOWNLOAD_URL="${REPO_URL}/releases/download/nightly/GhosttyKit.xcframework.zip"
+
+          sed -i '' "s|url: \".*\"|url: \"${DOWNLOAD_URL}\"|" Package.swift
+          sed -i '' "s|checksum: \".*\"|checksum: \"${CHECKSUM}\"|" Package.swift
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Package.swift
+          git diff --cached --quiet || (git commit -m "Update nightly to ghostty-org/ghostty@${{ needs.check.outputs.nightly_short_sha }}" && git push)
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  release:
+    needs: check
+    if: needs.check.outputs.tags_needed == 'true'
+    runs-on: macos-15
+    strategy:
+      matrix:
+        tag: ${{ fromJson(needs.check.outputs.new_tags) }}
+      max-parallel: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone Ghostty at tag
+        run: |
+          git clone https://github.com/ghostty-org/ghostty.git --depth 1 --branch "v${{ matrix.tag }}" 2>/dev/null || \
+          git clone https://github.com/ghostty-org/ghostty.git --depth 1 --branch "${{ matrix.tag }}"
+
+      - name: Detect Zig version
+        id: zig
+        run: |
+          ZIG_VERSION=$(sed -n 's/.*minimum_zig_version = "\([^"]*\)".*/\1/p' ghostty/build.zig.zon)
+          echo "version=$ZIG_VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ steps.zig.outputs.version }}
+
+      - name: Build XCFramework
+        run: |
+          cd ghostty
+          zig build -Dapp-runtime=none -Demit-xcframework -Demit-macos-app=false
+
+      - name: Package and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp -R ghostty/macos/GhosttyKit.xcframework .
+          zip -r -y GhosttyKit.xcframework.zip GhosttyKit.xcframework
+          CHECKSUM=$(swift package compute-checksum GhosttyKit.xcframework.zip)
+
+          TAG="${{ matrix.tag }}"
+          REPO_URL=$(gh repo view --json url -q .url)
+          DOWNLOAD_URL="${REPO_URL}/releases/download/${TAG}/GhosttyKit.xcframework.zip"
+
+          # Create a tagged commit with Package.swift pointing to this release
+          sed -i '' "s|url: \".*\"|url: \"${DOWNLOAD_URL}\"|" Package.swift
+          sed -i '' "s|checksum: \".*\"|checksum: \"${CHECKSUM}\"|" Package.swift
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Package.swift
+          git commit -m "Release ${TAG}"
+          git tag "${TAG}"
+          git push origin "${TAG}"
+
+          # Create GitHub release at the tag
+          gh release create "${TAG}" \
+            GhosttyKit.xcframework.zip \
+            --title "${TAG}" \
+            --notes "Built from ghostty-org/ghostty v${TAG}"
