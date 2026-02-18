@@ -123,6 +123,7 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main
           git add Package.swift
           git diff --cached --quiet || (git commit -m "Update nightly to ghostty-org/ghostty@${{ needs.check.outputs.nightly_short_sha }}" && git push)
         env:
