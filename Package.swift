@@ -11,8 +11,8 @@ let package = Package(
         // Updated automatically by CI — run the "Update GhosttyKit" workflow to populate.
         .binaryTarget(
             name: "GhosttyKit",
-            url: "https://github.com/finnvoor/GhosttyKit/releases/download/nightly/GhosttyKit.xcframework.zip",
-            checksum: "709aed8acfd7ee10b0b71e863d5da89c3b35812f0806738213b348dd3a24b062"
+            url: "https://github.com/finnvoor/GhosttyKit/releases/download/1.4.0/GhosttyKit.xcframework.zip",
+            checksum: "8a6fdb32cb1d713fbe1ff194e9fd9983161eeb8aaa2500652571d2de92027f2c"
         ),
     ]
 )
