@@ -100,7 +100,7 @@ jobs:
       - name: Build XCFramework
         run: |
           cd ghostty
-          zig build -Dapp-runtime=none -Demit-xcframework -Demit-macos-app=false
+          zig build -Dapp-runtime=none -Demit-xcframework -Demit-macos-app=false -Doptimize=ReleaseFast
 
       - name: Package
         run: |
@@ -174,7 +174,7 @@ jobs:
       - name: Build XCFramework
         run: |
           cd ghostty
-          zig build -Dapp-runtime=none -Demit-xcframework -Demit-macos-app=false
+          zig build -Dapp-runtime=none -Demit-xcframework -Demit-macos-app=false -Doptimize=ReleaseFast
 
       - name: Package and release
         env:
