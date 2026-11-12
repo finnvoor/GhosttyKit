@@ -12,7 +12,7 @@ let package = Package(
         .binaryTarget(
             name: "GhosttyKit",
             url: "https://github.com/finnvoor/GhosttyKit/releases/download/nightly/GhosttyKit.xcframework.zip",
-            checksum: "e34571354604e4c593b55de29612fe9d515ec507b848664aea64ac27b9dde071"
+            checksum: "3b1b405a6bb6e8e2122ecd35dbf9ee71a2291a83a382929143a797668705060b"
         ),
     ]
 )
